@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../models/book.dart';
 import '../services/library_store.dart';
@@ -32,12 +35,21 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   Future<void> _addBook() async {
-    final picked = await FilePicker.platform.pickFiles(
+    final files = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: const ['pdf'],
     );
-    final path = picked?.files.single.path;
-    if (path == null || !mounted) return;
+    if (files.isEmpty || !mounted) return;
+    final picked = files.first;
+    var path = picked.path;
+    if (path == null || !File(path).existsSync()) {
+      // No usable file path (e.g. a content:// URI): copy the bytes to a temp file.
+      final tmp = await getTemporaryDirectory();
+      final copy = File('${tmp.path}/${picked.name}');
+      await copy.writeAsBytes(await picked.readAsBytes());
+      path = copy.path;
+    }
+    if (!mounted) return;
 
     final progress = ValueNotifier<String>('Opening PDF…');
     final fraction = ValueNotifier<double?>(null);
@@ -54,12 +66,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
             children: [
               ValueListenableBuilder<double?>(
                 valueListenable: fraction,
-                builder: (_, v, __) => LinearProgressIndicator(value: v),
+                builder: (_, v, _) => LinearProgressIndicator(value: v),
               ),
               const SizedBox(height: 12),
               ValueListenableBuilder<String>(
                 valueListenable: progress,
-                builder: (_, v, __) => Text(v),
+                builder: (_, v, _) => Text(v),
               ),
             ],
           ),
@@ -164,7 +176,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
               : ListView.separated(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
                   itemCount: books.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  separatorBuilder: (_, _) => const SizedBox(height: 8),
                   itemBuilder: (_, i) {
                     final b = books[i];
                     return Card(
